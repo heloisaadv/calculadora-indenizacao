@@ -770,16 +770,65 @@ const CONFIG = {
 const waGeneric = `https://api.whatsapp.com/send?phone=${CONFIG.whatsappNumero}&text=${encodeURIComponent(CONFIG.whatsappMensagem)}`;
 ["waFloat","ctaWhats","footWhats"].forEach(id=>{const el=document.getElementById(id);if(el)el.href=waGeneric;});
 
-/* ════════ META PIXEL — helpers ════════ */
+/* ════════ META PIXEL + CAPI — helpers ════════ */
+const CAPI_ENDPOINT = "/api/track"; // Vercel serverless
+
 function pxId(prefix){return prefix+"-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);}
-function pxTrack(event,params,opts){
-  if(typeof fbq!=="function") return;
-  const id=pxId(event.toLowerCase());
-  try{fbq("track",event,params||{},Object.assign({eventID:id},opts||{}));}catch(e){}
-  return id;
+
+// Lê cookie do navegador (pra capturar _fbc / _fbp do Pixel)
+function getCookie(name){
+  const m=document.cookie.match(new RegExp("(?:^|; )"+name.replace(/([.$?*|{}()[\]\\/+^])/g,"\\$1")+"=([^;]*)"));
+  return m?decodeURIComponent(m[1]):undefined;
 }
-function pxContact(origin){
-  pxTrack("Contact",{content_name:origin,content_category:"whatsapp"});
+
+// Captura fbclid da URL e armazena como _fbc (caso o Pixel ainda não tenha gravado)
+(function captureFbclid(){
+  const p=new URLSearchParams(window.location.search);
+  const fbclid=p.get("fbclid");
+  if(fbclid && !getCookie("_fbc")){
+    const t=Math.floor(Date.now()/1000);
+    document.cookie=`_fbc=fb.1.${t}.${fbclid}; path=/; max-age=7776000; SameSite=Lax`;
+  }
+})();
+
+// Dispara pro Pixel (browser) E pro CAPI (server) com o MESMO event_id → dedup
+function pxTrack(event,custom_data,user_data){
+  const eventId=pxId(event.toLowerCase());
+  // 1) Pixel
+  if(typeof fbq==="function"){
+    try{fbq("track",event,custom_data||{},{eventID:eventId});}catch(e){}
+  }
+  // 2) CAPI
+  try{
+    navigator.sendBeacon
+      ? navigator.sendBeacon(CAPI_ENDPOINT,new Blob([JSON.stringify({
+          event_name:event,
+          event_id:eventId,
+          event_source_url:window.location.href,
+          custom_data:custom_data||{},
+          user_data:Object.assign({
+            fbc:getCookie("_fbc"),
+            fbp:getCookie("_fbp"),
+            country:"br"
+          },user_data||{}),
+        })],{type:"application/json"}))
+      : fetch(CAPI_ENDPOINT,{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            event_name:event,event_id:eventId,
+            event_source_url:window.location.href,
+            custom_data:custom_data||{},
+            user_data:Object.assign({fbc:getCookie("_fbc"),fbp:getCookie("_fbp"),country:"br"},user_data||{})
+          }),
+          keepalive:true
+        }).catch(()=>{});
+  }catch(e){}
+  return eventId;
+}
+
+function pxContact(origin,extra){
+  pxTrack("Contact",Object.assign({content_name:origin,content_category:"whatsapp"},extra||{}));
 }
 // Trackeamento de cliques no WhatsApp (todos os pontos)
 ["waFloat","ctaWhats","footWhats"].forEach(id=>{
@@ -1014,24 +1063,20 @@ function doCalcular(){
 
   showStep("step-resultado",3);
 
-  // META PIXEL — Advanced Matching (Pixel faz o hash SHA-256 automaticamente)
+  // Dados PII pro Advanced Matching (Pixel hasheia no browser, CAPI hasheia no server)
+  const partes=nome.split(/\s+/);
+  const ud={
+    email:email,
+    phone:telefone?("55"+telefone):"",
+    first_name:partes[0]||"",
+    last_name:partes.slice(1).join(" ")||"",
+    country:"br"
+  };
   if(typeof fbq==="function"){
-    const partes=nome.split(/\s+/);
-    const fn=(partes[0]||"").toLowerCase();
-    const ln=(partes.slice(1).join(" ")||"").toLowerCase();
-    const tel=telefone?("55"+telefone):"";
-    try{
-      fbq("init","1469019564472571",{
-        em:email.toLowerCase(),
-        ph:tel,
-        fn:fn,
-        ln:ln,
-        country:"br"
-      });
-    }catch(e){}
+    try{fbq("init","1469019564472571",{em:ud.email,ph:ud.phone,fn:ud.first_name,ln:ud.last_name,country:ud.country});}catch(e){}
   }
 
-  // META PIXEL — Lead (evento principal de conversão, com valor estimado)
+  // Lead (evento principal — manda pro Pixel + CAPI com user_data hasheado server-side)
   pxTrack("Lead",{
     content_name:"Calculadora — Indenização Acidente de Trabalho",
     content_category:"acidente-trabalho",
@@ -1040,15 +1085,15 @@ function doCalcular(){
     grau_incapacidade:percentual,
     salario_informado:salario,
     idade:idade
-  });
+  },ud);
 
-  // META PIXEL — ViewContent do resultado (público de remarketing "viu valor")
+  // ViewContent do resultado (público de remarketing "viu valor")
   pxTrack("ViewContent",{
     content_name:"Resultado da Calculadora",
     content_category:"acidente-trabalho",
     value:Math.round(total*100)/100,
     currency:"BRL"
-  });
+  },ud);
 
   // Counter up no valor final
   const valEl=document.getElementById("valorFinal");
