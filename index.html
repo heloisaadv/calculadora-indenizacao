@@ -792,6 +792,37 @@ function saveLead(data){
   }catch(e){}
 }
 
+// ════════ ATRIBUIÇÃO — de qual campanha/anúncio do Meta o lead veio ════════
+// O Meta Ads preenche os parâmetros utm_* na URL de destino (ver instruções no README).
+// Capturamos assim que a pessoa chega e guardamos na sessão, pra não perder a
+// origem enquanto ela preenche o formulário.
+(function captureAttribution(){
+  try{
+    const p=new URLSearchParams(window.location.search);
+    const keys=["utm_source","utm_medium","utm_campaign","utm_term","utm_content"];
+    const data={}; let hasAny=false;
+    keys.forEach(k=>{const v=p.get(k); if(v){data[k]=v; hasAny=true;}});
+    const fbclid=p.get("fbclid"); if(fbclid){data.fbclid=fbclid; hasAny=true;}
+    // first-touch da sessão: só grava se ainda não houver origem salva
+    if(hasAny && !sessionStorage.getItem("lead_attrib")){
+      sessionStorage.setItem("lead_attrib",JSON.stringify(data));
+    }
+  }catch(e){}
+})();
+
+function getAttribution(){
+  let a={};
+  try{const s=sessionStorage.getItem("lead_attrib"); if(s) a=JSON.parse(s);}catch(e){}
+  return {
+    utm_source:a.utm_source||"",
+    utm_medium:a.utm_medium||"",
+    utm_campaign:a.utm_campaign||"",
+    utm_term:a.utm_term||"",
+    utm_content:a.utm_content||"",
+    fbclid:a.fbclid||""
+  };
+}
+
 function pxId(prefix){return prefix+"-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);}
 
 // Lê cookie do navegador (pra capturar _fbc / _fbp do Pixel)
@@ -1082,7 +1113,8 @@ function doCalcular(){
   const trajeto=document.querySelector('input[name="trajeto"]:checked')?.value||"nao";
 
   // Salva o lead na planilha do Google (todos que chegam ao resultado)
-  saveLead({
+  // Object.assign acrescenta os dados de atribuição (campanha/anúncio do Meta)
+  saveLead(Object.assign({
     nome:nome,
     email:email,
     telefone:telefone?("55"+telefone):"",
@@ -1093,7 +1125,7 @@ function doCalcular(){
     trajeto:trajeto,
     total:Math.round(total*100)/100,
     origem:window.location.href
-  });
+  },getAttribution()));
 
   showStep("step-resultado",3);
 

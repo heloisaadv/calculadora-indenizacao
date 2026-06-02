@@ -51,7 +51,8 @@ function doPost(e) {
       sheet.appendRow([
         "Data/Hora", "Nome", "E-mail", "WhatsApp",
         "Data nascimento", "Idade", "Salário (R$)",
-        "Grau incapacidade (%)", "Trajeto", "Valor estimado (R$)", "Origem"
+        "Grau incapacidade (%)", "Trajeto", "Valor estimado (R$)", "Origem",
+        "Plataforma", "Mídia", "Campanha", "Conjunto (adset)", "Anúncio", "fbclid"
       ]);
     }
 
@@ -66,7 +67,13 @@ function doPost(e) {
       data.percentual || "",
       data.trajeto || "",
       data.total || "",
-      data.origem || ""
+      data.origem || "",
+      data.utm_source || "",   // Plataforma (fb / ig)
+      data.utm_medium || "",   // Mídia (paid)
+      data.utm_campaign || "", // Campanha
+      data.utm_term || "",     // Conjunto (adset)
+      data.utm_content || "",  // Anúncio
+      data.fbclid || ""        // ID do clique do Meta
     ]);
 
     return _json({ ok: true });
