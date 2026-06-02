@@ -773,6 +773,25 @@ const waGeneric = `https://api.whatsapp.com/send?phone=${CONFIG.whatsappNumero}&
 /* ════════ META PIXEL + CAPI — helpers ════════ */
 const CAPI_ENDPOINT = "/api/track"; // Vercel serverless
 
+// ════════ GOOGLE SHEETS — salva o lead na planilha (via Apps Script) ════════
+// Cole abaixo a URL do "app da web" gerada pelo Apps Script (começa com https://script.google.com/...)
+const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyBxmAdggtgeQYhFSTA5pU8mxlfrahcIJ9ThcClc1uCL_PqHlA3Unnl3E7P_0dopmzl/exec";
+const SHEETS_TOKEN = "54dcf38514d89d661181aa4a55c69ef8"; // precisa ser igual ao TOKEN do google-apps-script.gs
+
+function saveLead(data){
+  // Só envia se a URL já tiver sido configurada
+  if(typeof SHEETS_ENDPOINT!=="string" || SHEETS_ENDPOINT.indexOf("http")!==0) return;
+  try{
+    fetch(SHEETS_ENDPOINT,{
+      method:"POST",
+      mode:"no-cors", // Apps Script não devolve cabeçalhos CORS; no-cors evita o erro de preflight
+      headers:{"Content-Type":"text/plain;charset=UTF-8"}, // text/plain = requisição simples (sem preflight)
+      body:JSON.stringify(Object.assign({token:SHEETS_TOKEN},data)),
+      keepalive:true
+    }).catch(()=>{});
+  }catch(e){}
+}
+
 function pxId(prefix){return prefix+"-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);}
 
 // Lê cookie do navegador (pra capturar _fbc / _fbp do Pixel)
@@ -1060,6 +1079,21 @@ function doCalcular(){
   const danoMaterial=(salario*meses)*(percentual/100);
   const danoMoral=CONFIG.danoMoralFixo;
   const total=danoMaterial+danoMoral;
+  const trajeto=document.querySelector('input[name="trajeto"]:checked')?.value||"nao";
+
+  // Salva o lead na planilha do Google (todos que chegam ao resultado)
+  saveLead({
+    nome:nome,
+    email:email,
+    telefone:telefone?("55"+telefone):"",
+    dataNascimento:dataNasc,
+    idade:idade,
+    salario:salario,
+    percentual:percentual,
+    trajeto:trajeto,
+    total:Math.round(total*100)/100,
+    origem:window.location.href
+  });
 
   showStep("step-resultado",3);
 
