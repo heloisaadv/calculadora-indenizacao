@@ -49,3 +49,38 @@ Marcar para **Production**, **Preview** e **Development**. Depois fazer um redep
 
 ### 4. Checar match quality
 Após algumas horas de eventos rodando: Gerenciador de Eventos → Pixel → **Visão geral** → Event Match Quality. Meta de 6.0+ para eventos com email/telefone.
+
+## Captura de leads no Google Sheets
+
+A cada cálculo finalizado, o site grava o lead numa planilha do Google via Apps Script
+(função `saveLead` no `index.html`, script em `google-apps-script.gs`).
+
+- Planilha: **"Acidente de Trabalho - HH Advogadas"**, aba **"Leads"**.
+- Envio: `POST` com `Content-Type: text/plain` (evita preflight CORS) e `mode: no-cors`.
+- Proteção: token (`SHEETS_TOKEN` no `index.html` = `TOKEN` no `google-apps-script.gs`).
+
+Para alterar o script: editar `google-apps-script.gs`, colar no editor do Apps Script,
+e **Implantar → Gerenciar implantações → ✏️ → Nova versão** (a URL não muda).
+
+## Rastreamento de campanha (Meta Ads → planilha)
+
+O site captura os parâmetros UTM da URL na chegada (`captureAttribution` no `index.html`),
+guarda na sessão e grava nas colunas Plataforma / Mídia / Campanha / Conjunto / Anúncio / fbclid.
+
+Para o Meta preencher esses parâmetros automaticamente, no **anúncio** (Ads Manager) →
+seção **Rastreamento** → **Parâmetros de URL**, cole:
+
+```
+utm_source={{site_source_name}}&utm_medium=paid&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}
+```
+
+O Meta substitui as macros `{{...}}` em cada clique:
+
+| Parâmetro | Macro do Meta | Vira a coluna |
+|---|---|---|
+| `utm_source` | `{{site_source_name}}` (fb, ig, an, msg) | Plataforma |
+| `utm_medium` | `paid` (fixo) | Mídia |
+| `utm_campaign` | `{{campaign.name}}` | Campanha |
+| `utm_term` | `{{adset.name}}` | Conjunto (adset) |
+| `utm_content` | `{{ad.name}}` | Anúncio |
+| `fbclid` | (o Meta adiciona sozinho) | fbclid |
