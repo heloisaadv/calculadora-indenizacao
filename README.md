@@ -84,3 +84,19 @@ O Meta substitui as macros `{{...}}` em cada clique:
 | `utm_term` | `{{adset.name}}` | Conjunto (adset) |
 | `utm_content` | `{{ad.name}}` | Anúncio |
 | `fbclid` | (o Meta adiciona sozinho) | fbclid |
+
+## Follow-up automático no WhatsApp (1 min após o cálculo)
+
+Ao concluir o cálculo, o site dispara o lead para um **webhook do n8n** (`notifyN8n` no
+`index.html`), que aguarda 1 minuto e envia uma mensagem de WhatsApp via **uazapi**.
+
+```
+Site → Webhook n8n → valida token + normaliza → dedup (telefone) → Wait 1 min → uazapi
+```
+
+- Workflow do n8n: `n8n-followup-whatsapp.json` (**não versionado** — contém tokens; ver `.gitignore`).
+- Anti-abuso: o site envia um `N8N_TOKEN`; o node de código do n8n descarta o que não bater.
+- Dedup em duas camadas:
+  - **Navegador** (`alreadyNotified`/`markNotified` no `index.html`): janela de 24h por telefone — cobre duplo clique, reload e recálculo no mesmo aparelho.
+  - **n8n** (node Remove Duplicates por telefone): dedup definitiva, entre dispositivos.
+- Mensagem montada no node de código com `primeiroNome` + `valorFormatado`.

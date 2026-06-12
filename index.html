@@ -778,6 +778,10 @@ const CAPI_ENDPOINT = "/api/track"; // Vercel serverless
 const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyBxmAdggtgeQYhFSTA5pU8mxlfrahcIJ9ThcClc1uCL_PqHlA3Unnl3E7P_0dopmzl/exec";
 const SHEETS_TOKEN = "54dcf38514d89d661181aa4a55c69ef8"; // precisa ser igual ao TOKEN do google-apps-script.gs
 
+// ════════ n8n — dispara o lead pro fluxo de follow-up no WhatsApp ════════
+const N8N_WEBHOOK = "https://app.matheusdelmiro.site/webhook/calculadora-lead";
+const N8N_TOKEN = "54db2d0dd261d4b87b658b4530a079fe"; // trava anti-abuso: o n8n só aceita com este token
+
 function saveLead(data){
   // Só envia se a URL já tiver sido configurada
   if(typeof SHEETS_ENDPOINT!=="string" || SHEETS_ENDPOINT.indexOf("http")!==0) return;
@@ -789,6 +793,49 @@ function saveLead(data){
       body:JSON.stringify(Object.assign({token:SHEETS_TOKEN},data)),
       keepalive:true
     }).catch(()=>{});
+  }catch(e){}
+}
+
+// Dispara o lead pro webhook do n8n (que aguarda 1 min e manda o WhatsApp)
+function notifyN8n(data){
+  if(typeof N8N_WEBHOOK!=="string" || N8N_WEBHOOK.indexOf("http")!==0) return;
+  try{
+    fetch(N8N_WEBHOOK,{
+      method:"POST",
+      mode:"no-cors", // evita preflight CORS; o n8n recebe o corpo mesmo assim
+      headers:{"Content-Type":"text/plain;charset=UTF-8"}, // text/plain = requisição simples
+      body:JSON.stringify(Object.assign({token:N8N_TOKEN},data)),
+      keepalive:true
+    }).catch(()=>{});
+  }catch(e){}
+}
+
+// ════════ GUARDA CLIENT-SIDE: evita disparar o WhatsApp 2x pro mesmo telefone ════════
+// Guarda no navegador os telefones já notificados (com horário). Dentro de uma janela
+// de 24h, o mesmo telefone NÃO dispara o webhook de novo (cobre duplo clique, reload e
+// "fazer novo cálculo" com o mesmo número). Passada a janela, quem decide recontatar é
+// o n8n — então não bloqueamos um lead legítimo que volta dias depois.
+// ⚠️ Isto é só "anti-ruído" do navegador: NÃO pega a pessoa em outro aparelho. A dedup
+// definitiva (entre dispositivos) tem que ser feita no n8n.
+const NOTIFY_DEDUP_KEY="notified_phones";
+const NOTIFY_DEDUP_WINDOW_MS=24*60*60*1000; // 24 horas
+
+function readNotified(){
+  try{return JSON.parse(localStorage.getItem(NOTIFY_DEDUP_KEY))||{};}catch(e){return {};}
+}
+function alreadyNotified(telefone){
+  const tel=String(telefone||"").replace(/\D/g,""); // só dígitos
+  if(!tel) return false;
+  const ts=readNotified()[tel];
+  return !!ts && (Date.now()-ts)<NOTIFY_DEDUP_WINDOW_MS;
+}
+function markNotified(telefone){
+  const tel=String(telefone||"").replace(/\D/g,""); // só dígitos
+  if(!tel) return;
+  try{
+    const map=readNotified();
+    map[tel]=Date.now();
+    localStorage.setItem(NOTIFY_DEDUP_KEY,JSON.stringify(map));
   }catch(e){}
 }
 
@@ -1090,6 +1137,7 @@ function formatBRL(v){return v.toLocaleString("pt-BR",{style:"currency",currency
 function calcular(){
   if(!validarPasso2())return;
   const btn=document.getElementById("btnCalcular");
+  if(btn.classList.contains("is-loading"))return; // evita duplo clique disparar 2x
   btn.classList.add("is-loading");
   setTimeout(()=>{
     btn.classList.remove("is-loading");
@@ -1112,9 +1160,9 @@ function doCalcular(){
   const total=danoMaterial+danoMoral;
   const trajeto=document.querySelector('input[name="trajeto"]:checked')?.value||"nao";
 
-  // Salva o lead na planilha do Google (todos que chegam ao resultado)
-  // Object.assign acrescenta os dados de atribuição (campanha/anúncio do Meta)
-  saveLead(Object.assign({
+  // Monta o lead uma vez e envia pros dois destinos.
+  // Object.assign acrescenta os dados de atribuição (campanha/anúncio do Meta).
+  const leadData=Object.assign({
     nome:nome,
     email:email,
     telefone:telefone?("55"+telefone):"",
@@ -1124,8 +1172,16 @@ function doCalcular(){
     percentual:percentual,
     trajeto:trajeto,
     total:Math.round(total*100)/100,
+    valorFormatado:formatBRL(total), // pronto pra usar na mensagem do WhatsApp
     origem:window.location.href
-  },getAttribution()));
+  },getAttribution());
+  saveLead(leadData);    // grava na planilha do Google (registra todo cálculo)
+  // Só dispara o follow-up se este telefone ainda não foi notificado nas últimas 24h
+  // (trava anti-ruído no navegador; a dedup definitiva fica no n8n)
+  if(!alreadyNotified(telefone)){
+    markNotified(telefone);
+    notifyN8n(leadData);   // dispara o follow-up automático no WhatsApp (via n8n)
+  }
 
   showStep("step-resultado",3);
 
