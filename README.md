@@ -85,18 +85,26 @@ O Meta substitui as macros `{{...}}` em cada clique:
 | `utm_content` | `{{ad.name}}` | Anúncio |
 | `fbclid` | (o Meta adiciona sozinho) | fbclid |
 
-## Follow-up automático no WhatsApp (1 min após o cálculo)
+## Follow-up automático no WhatsApp
 
 Ao concluir o cálculo, o site dispara o lead para um **webhook do n8n** (`notifyN8n` no
-`index.html`), que aguarda 1 minuto e envia uma mensagem de WhatsApp via **uazapi**.
+`index.html`), que envia até **duas** mensagens de WhatsApp via **uazapi**.
 
 ```
-Site → Webhook n8n → valida token + normaliza → dedup (telefone) → Wait 1 min → uazapi
+Site → Webhook → valida token → Wait 1 min → dedup (janela 7d) → 1ª msg
+     → Wait 24h → respondeu? → (se não) 2ª msg
 ```
 
 - Workflow do n8n: `n8n-followup-whatsapp.json` (**não versionado** — contém tokens; ver `.gitignore`).
-- Anti-abuso: o site envia um `N8N_TOKEN`; o node de código do n8n descarta o que não bater.
+- **1ª mensagem:** 1 min após o cálculo. **2ª mensagem:** 24h depois, só se a pessoa **não respondeu** (checado via `/message/find` da uazapi).
+- Anti-abuso: o site envia um `N8N_TOKEN`; o node de código descarta o que não bater.
 - Dedup em duas camadas:
   - **Navegador** (`alreadyNotified`/`markNotified` no `index.html`): janela de 24h por telefone — cobre duplo clique, reload e recálculo no mesmo aparelho.
-  - **n8n** (node Remove Duplicates por telefone): dedup definitiva, entre dispositivos.
-- Mensagem montada no node de código com `primeiroNome` + `valorFormatado`.
+  - **n8n** (node "Janela de 7 dias"): consulta o histórico da uazapi e não reenvia se já houve contato nos últimos 7 dias — permite recontato depois disso. Entre dispositivos.
+- Mensagens montadas no node de código com `primeiroNome` + `valorFormatado`.
+
+## Resumo diário de leads
+
+Workflow `n8n-resumo-diario.json` (**não versionado** — contém token): todo dia às 18h,
+lê a planilha de leads (Google Sheets), filtra os do dia e manda um resumo no WhatsApp
+(via uazapi) para o número do escritório. Requer conectar a credencial Google no n8n.

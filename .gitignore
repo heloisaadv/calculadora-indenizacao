@@ -1,2 +1,2 @@
-# Contém tokens sensíveis (uazapi + webhook) — NÃO versionar
-n8n-followup-whatsapp.json
+# Contêm tokens sensíveis (uazapi + webhook) — NÃO versionar
+n8n-*.json
